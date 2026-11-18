@@ -53,7 +53,7 @@ export default function App() {
     if (state && state.phase !== 'lobby') SFX.startAmbience(); else SFX.stopAmbience();
   }, [state?.code, state?.phase]);
 
-  const peerKey = state?.players.filter((p) => p.connected).map((p) => p.id).sort().join(',') ?? '';
+  const peerKey = state?.players.filter((p) => p.connected && !p.isBot).map((p) => p.id).sort().join(',') ?? '';
   useEffect(() => {
     if (state && state.phase !== 'lobby') voice.syncPeers(peerKey.split(',').filter(Boolean));
   }, [peerKey, state?.phase]);

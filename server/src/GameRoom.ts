@@ -13,12 +13,14 @@ import type {
   PrivateState, Role, RoomId, RoomSettings, SabotageType, ServerToClient, TableState,
 } from '../../shared/src/index';
 import { recordResult } from './db';
+import { BotDirector, BOT_NAMES } from './bots';
 
 export type IO = Server<ClientToServer, ServerToClient>;
 export type GameSocket = Socket<ClientToServer, ServerToClient>;
 
-interface Player {
+export interface Player {
   id: string;
+  isBot: boolean;
   userId: string | null;
   name: string;
   cosmetics: Cosmetics;
@@ -46,17 +48,17 @@ const ROLE_FR: Record<Role, string> = { survivor: 'Survivant', possessed: 'Poss�
 export class GameRoom {
   readonly code: string;
   private io: IO;
-  private players = new Map<string, Player>();
+  /** @internal lu par les bots */ players = new Map<string, Player>();
   private hostId = '';
-  private phase: GameRoomState['phase'] = 'lobby';
+  /** @internal lu par les bots */ phase: GameRoomState['phase'] = 'lobby';
   private settings: RoomSettings = { maxPlayers: 8, mediumEnabled: true };
   private deck: Card[] = [];
   private discard: Card[] = [];
   private panic = 0;
-  private skirmish = false;
-  private sabotage = { lightsOutUntil: 0, voiceJamUntil: 0, locked: null as { room: RoomId; until: number } | null, readyAt: 0 };
-  private tables: TableState[] = [];
-  private meeting: GameRoomState['meeting'] = null;
+  /** @internal lu par les bots */ skirmish = false;
+  /** @internal lu par les bots */ sabotage = { lightsOutUntil: 0, voiceJamUntil: 0, locked: null as { room: RoomId; until: number } | null, readyAt: 0 };
+  /** @internal lu par les bots */ tables: TableState[] = [];
+  /** @internal lu par les bots */ meeting: GameRoomState['meeting'] = null;
   private votes = new Map<string, string>();
   private ghost = { x: GHOST_PATH[0].x, y: GHOST_PATH[0].y, active: false, wp: 1 };
   private winner: GameRoomState['winner'] = null;
@@ -64,6 +66,7 @@ export class GameRoom {
   private timer: NodeJS.Timeout | null = null;
   private lastTick = Date.now();
   private chatLog: ChatMessage[] = [];
+  private bots = new BotDirector(this);
   /** Appelé quand la salle est vide pour la retirer du registre. */
   onEmpty: () => void = () => {};
 
@@ -77,6 +80,7 @@ export class GameRoom {
   /* ============================== Lobby ============================== */
 
   get size() { return [...this.players.values()].filter((p) => p.connected).length; }
+  get humans() { return [...this.players.values()].filter((p) => p.connected && !p.isBot).length; }
   get isOpen() { return this.phase === 'lobby' && this.size < this.settings.maxPlayers; }
 
   addPlayer(socket: GameSocket, p: JoinPayload, userId: string | null) {
@@ -87,7 +91,7 @@ export class GameRoom {
       if (free) p = { ...p, cosmetics: { ...p.cosmetics, color: free } };
     }
     const player: Player = {
-      id: socket.id, userId, name: p.name.slice(0, 16) || 'Invité', cosmetics: p.cosmetics,
+      id: socket.id, isBot: false, userId, name: p.name.slice(0, 16) || 'Invité', cosmetics: p.cosmetics,
       x: SPAWN.x, y: SPAWN.y, facing: 1, moving: false, alive: true, connected: true, seatedAt: null,
       role: 'survivor', hand: [], items: [], saltUntil: 0, uvUntil: 0, slipReadyAt: 0, searchReadyAt: 0,
       ghostTouchReadyAt: 0, mediumInspectUsed: false, bellUsed: false, revealed: false, lastMoveAt: Date.now(),
@@ -111,7 +115,7 @@ export class GameRoom {
       const next = [...this.players.values()].find((x) => x.connected);
       this.hostId = next?.id ?? '';
     }
-    if (this.size === 0) { this.destroy(); return; }
+    if (this.humans === 0) { this.destroy(); return; }
     this.io.to(this.code).emit('rtc:peers', this.connectedIds());
     this.checkWin();
     this.broadcast();
@@ -129,6 +133,39 @@ export class GameRoom {
     if (!p || this.phase !== 'lobby') return;
     p.cosmetics = c;
     this.broadcast();
+  }
+
+  /** Ajoute un joueur IA (hôte uniquement, en lobby). */
+  addBot(by: string) {
+    if (by !== this.hostId || this.phase !== 'lobby' || this.size >= this.settings.maxPlayers) return;
+    const used = new Set([...this.players.values()].map((p) => p.name));
+    const name = BOT_NAMES.find((n) => !used.has(n)) ?? `Bot ${this.size + 1}`;
+    const takenColors = new Set([...this.players.values()].map((p) => p.cosmetics.color));
+    const color = PALETTE.find((c) => !takenColors.has(c)) ?? '#3f474e';
+    const hats: Cosmetics['hat'][] = ['none', 'tophat', 'witch', 'candle', 'horns'];
+    const id = `bot-${rid()}`;
+    this.players.set(id, {
+      id, isBot: true, userId: null, name, cosmetics: { color, hat: hats[Math.floor(Math.random() * hats.length)] },
+      x: SPAWN.x, y: SPAWN.y, facing: 1, moving: false, alive: true, connected: true, seatedAt: null,
+      role: 'survivor', hand: [], items: [], saltUntil: 0, uvUntil: 0, slipReadyAt: 0, searchReadyAt: 0,
+      ghostTouchReadyAt: 0, mediumInspectUsed: false, bellUsed: false, revealed: false, lastMoveAt: Date.now(),
+    });
+    this.system(`🤖 ${name} (IA) rejoint le manoir.`);
+    this.broadcast();
+  }
+
+  removeBot(by: string, botId: string) {
+    const b = this.players.get(botId);
+    if (by !== this.hostId || this.phase !== 'lobby' || !b?.isBot) return;
+    this.players.delete(botId);
+    this.system(`🤖 ${b.name} est reparti.`);
+    this.broadcast();
+  }
+
+  /** Déplacement d'un bot (collisions vérifiées, pas de contrôle de latence réseau). */
+  botMove(p: Player, x: number, y: number, facing: 1 | -1, moving: boolean) {
+    if (!p.isBot || !p.alive || this.phase !== 'explore' || p.seatedAt) return;
+    p.x = x; p.y = y; p.facing = facing; p.moving = moving;
   }
 
   chat(id: string, text: string) {
@@ -451,6 +488,7 @@ export class GameRoom {
       v.hand.push(card);
       this.fx({ type: 'hexed', text: 'HEXED!', x: v.x, y: v.y, only: id });
       this.toast(v.id, 'Un frisson glacé… ta main semble plus lourde.');
+      if (v.isBot) this.bots.onHexed(v, p);
       this.sendPrivate(v);
     }
     this.sendPrivate(p);
@@ -530,6 +568,8 @@ export class GameRoom {
     if (this.phase === 'lobby' || this.phase === 'ended') return;
 
     if (this.sabotage.locked && now > this.sabotage.locked.until) this.sabotage.locked = null;
+
+    if (this.phase === 'explore' || this.phase === 'meeting') this.bots.tick(now, dt);
 
     if (this.phase === 'meeting' && this.meeting) {
       if (!this.meeting.result && now >= this.meeting.endsAt) this.resolveVote();
@@ -634,7 +674,7 @@ export class GameRoom {
   }
 
   private addPanic(n: number) { this.panic = Math.max(0, Math.min(100, this.panic + n)); }
-  private connectedIds() { return [...this.players.values()].filter((p) => p.connected).map((p) => p.id); }
+  private connectedIds() { return [...this.players.values()].filter((p) => p.connected && !p.isBot).map((p) => p.id); }
   private toast(id: string, text: string) { this.io.to(id).emit('toast', text); }
 
   private fx(f: FxEvent) {
@@ -665,7 +705,7 @@ export class GameRoom {
     const players: PlayerPublic[] = [...this.players.values()].map((p) => ({
       id: p.id, name: p.name, cosmetics: p.cosmetics, x: Math.round(p.x), y: Math.round(p.y), facing: p.facing,
       moving: p.moving, alive: p.alive, seatedAt: p.seatedAt, handCount: p.hand.length, isHost: p.id === this.hostId,
-      revealedRole: p.revealed ? p.role : null, connected: p.connected,
+      revealedRole: p.revealed ? p.role : null, connected: p.connected, isBot: p.isBot,
     }));
     const state: GameRoomState = {
       code: this.code, phase: this.phase, hostId: this.hostId, settings: this.settings, players, panic: Math.round(this.panic),

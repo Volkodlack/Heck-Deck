@@ -89,6 +89,8 @@ io.on('connection', (socket: GameSocket) => {
   socket.on('lobby:settings', (s) => roomOf(socket)?.updateSettings(socket.id, s ?? {}));
   socket.on('lobby:cosmetics', (c) => roomOf(socket)?.updateCosmetics(socket.id, sanitize({ name: 'x', cosmetics: c }).cosmetics));
   socket.on('lobby:start', () => roomOf(socket)?.start(socket.id));
+  socket.on('lobby:addBot', () => roomOf(socket)?.addBot(socket.id));
+  socket.on('lobby:removeBot', (id) => roomOf(socket)?.removeBot(socket.id, String(id)));
   socket.on('chat', (t) => roomOf(socket)?.chat(socket.id, String(t ?? '')));
 
   socket.on('move', (m) => roomOf(socket)?.move(socket.id, m));

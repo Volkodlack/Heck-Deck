@@ -40,6 +40,10 @@ export default function LobbyRoom({ cosmetics, onCosmetics }: { cosmetics: Cosme
                 <Avatar cosmetics={p.cosmetics} size={56} />
                 <span className="font-comic text-lg truncate max-w-full">{p.name}</span>
                 {p.isHost && <span className="font-pixel text-[8px] text-hexviolet">HÔTE</span>}
+                {p.isBot && <span className="font-pixel text-[8px] text-toxic">🤖 IA</span>}
+                {p.isBot && isHost && (
+                  <button className="text-xs underline opacity-70 hover:text-blood" onClick={() => socket.emit('lobby:removeBot', p.id)}>retirer</button>
+                )}
               </div>
             ))}
           </div>
@@ -58,6 +62,9 @@ export default function LobbyRoom({ cosmetics, onCosmetics }: { cosmetics: Cosme
                   <input type="checkbox" checked={state.settings.mediumEnabled} onChange={(e) => socket.emit('lobby:settings', { mediumEnabled: e.target.checked })} />
                   Rôle neutre « Médium » (6+ joueurs)
                 </label>
+                <button className="btn-violet !text-base" disabled={players.length >= state.settings.maxPlayers} onClick={() => socket.emit('lobby:addBot')}>
+                  🤖 + AJOUTER UN BOT
+                </button>
                 <button className="btn-toxic" disabled={players.length < 2} onClick={() => socket.emit('lobby:start')}>LANCER LA PARTIE</button>
               </div>
             ) : (

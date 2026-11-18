@@ -16,6 +16,41 @@ Tout fichier placé ici est servi tel quel à l'URL `/assets/...` (ex : `/assets
 
 ---
 
+## 0. ⚡ Génération automatique via Cloudflare Workers AI (recommandé)
+
+Le repo contient un générateur prêt à l'emploi qui produit **tous** les visuels du jeu dans la direction
+artistique HEX DECK : cartoon « rubber hose » années 30 (jambes en nouilles, gants blancs, grosses chaussures),
+encre noire épaisse et tremblée, hachures croisées, grands yeux noirs et sourire plein de dents. La palette
+est limitée au **vert toxique** et au **violet profond**, avec du blanc cassé.
+
+- Modèle : `@cf/black-forest-labs/flux-1-schnell` (FLUX.1 [schnell], licence Apache-2.0 : les images
+  sont utilisables commercialement).
+- Coût : **gratuit** dans les 10 000 neurones offerts chaque jour par Cloudflare (largement de quoi
+  générer tout le jeu, plusieurs fois).
+
+**Mise en place (5 minutes)**
+1. Crée un compte gratuit sur https://dash.cloudflare.com.
+2. Récupère ton **Account ID** (colonne de droite de l'accueil du dashboard).
+3. **My Profile → API Tokens → Create Token** → modèle **« Workers AI »** → copie le jeton.
+4. Ajoute-les dans `.env` : `CLOUDFLARE_ACCOUNT_ID=…` et `CLOUDFLARE_API_TOKEN=…`
+
+**Commandes**
+```bash
+npm run assets -- --dry                 # voir les prompts sans rien générer
+npm run assets                          # générer tout ce qui manque
+npm run assets -- ghost --variants 4    # 4 propositions du Fantôme pour choisir la meilleure
+npm run assets -- hex-ace --force       # régénérer un asset précis
+npm run assets:cutout                   # fond blanc → PNG transparent (sprites/ et cards/)
+```
+Les prompts et le style commun se règlent dans **`scripts/asset-prompts.json`** : la clé `style`
+s'ajoute à chaque prompt, ce qui garantit la cohérence visuelle de l'ensemble. Pour un asset retenu,
+note sa seed (affichée à la génération) dans `CREDITS.md`.
+
+FLUX renvoie des JPEG sur fond blanc. `npm run assets:cutout` retire le fond depuis les bords et garde
+le blanc intérieur (yeux, dents, gants), puis enregistre un PNG transparent à côté du JPEG.
+
+---
+
 ## 1. Règle d'or des licences
 
 | Licence | Utilisable ? | Remarque |
@@ -48,7 +83,7 @@ Tout fichier placé ici est servi tel quel à l'URL `/assets/...` (ex : `/assets
 
 | Outil | Licence des images générées |
 |---|---|
-| **FLUX.1 [schnell]** (Hugging Face Spaces, ou en local via ComfyUI) | Modèle sous Apache-2.0 : usage commercial des images autorisé. ✅ Recommandé |
+| **FLUX.1 [schnell]** (Cloudflare Workers AI via `npm run assets`, Hugging Face Spaces, ou en local via ComfyUI) | Modèle sous Apache-2.0 : usage commercial des images autorisé. ✅ Recommandé |
 | **Stable Diffusion XL** (local : ComfyUI / Fooocus / Automatic1111) | Licence CreativeML OpenRAIL++-M : images utilisables commercialement. ✅ |
 | Bing Image Creator, Playground AI… | Soumis aux conditions du service, qui peuvent changer : relis-les avant de publier. ⚠️ |
 

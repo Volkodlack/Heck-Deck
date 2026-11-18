@@ -31,7 +31,23 @@ Ouvre **http://localhost:5173** dans plusieurs onglets (ou sur plusieurs machine
 | `npm run build` | Compile le client dans `client/dist` |
 | `npm start` | Lance le serveur, qui sert aussi `client/dist` (production, un seul port) |
 | `npm run typecheck` | Vérification TypeScript (client + serveur) |
-| `npm test` | Test de bout en bout : 4 clients simulés jouent une partie complète |
+| `npm test` | Tests de bout en bout : partie à 4 clients simulés + partie contre les bots |
+| `npm run assets` | Génère les visuels via Cloudflare Workers AI (voir ASSETS_GUIDE) |
+| `npm run assets:cutout` | Détoure les visuels générés en PNG transparents |
+
+### 🤖 Tester en solo avec des bots
+Dans le lobby, l'hôte clique sur **« + AJOUTER UN BOT »** (autant de fois qu'il le faut, jusqu'à 8
+joueurs au total). Les bots sont gérés par le serveur (`server/src/bots.ts`) et passent par les mêmes
+validations que les humains :
+- ils naviguent de pièce en pièce par les portes et contournent une pièce verrouillée ;
+- ils fouillent les meubles, utilisent leurs objets, s'assoient aux tables et jouent aux cartes (ils
+  brûlent le pli avec leurs 2 et se débarrassent des cartes Maudites avant la fin) ;
+- en **Possédé**, ils traquent un Survivant pour lui refiler une Hex Card, sabotent et accusent un innocent ;
+- en **Survivant**, ils soupçonnent celui qui leur a refilé une carte (pas toujours le bon), sonnent la
+  cloche, s'expriment dans le chat de réunion et votent.
+
+Avec 1 bot, tu joues en mode Escarmouche. À partir de 3 bots, un Possédé caché est tiré au sort, et
+ça peut être toi. Les bots n'ont pas de voix.
 
 > 🎙️ Le micro ne fonctionne que sur `localhost` ou en **HTTPS** (règle des navigateurs). Sans micro,
 > tu entends quand même les autres.
@@ -66,8 +82,9 @@ Heck-Deck/
 ├── server/
 │   ├── src/server.ts         Express + Socket.io, lobbies, signalisation WebRTC
 │   ├── src/GameRoom.ts       Machine à états, cartes, sabotages, votes, Fantôme IA
+│   ├── src/bots.ts           Joueurs IA (navigation, cartes, sabotages, votes)
 │   ├── src/db.ts             Supabase côté serveur (facultatif)
-│   └── test/smoke.ts         Test de bout en bout
+│   └── test/                 smoke.ts (partie 4 joueurs), bots.ts (partie solo)
 ├── client/
 │   ├── public/assets/        sprites/ tiles/ audio/ cards/ + ASSETS_GUIDE.md
 │   └── src/
@@ -84,6 +101,7 @@ Heck-Deck/
 │           ├── Home.tsx, LobbyRoom.tsx, ChatBox.tsx
 │           ├── HUD.tsx, CardTableModal.tsx, VoteModal.tsx, EndScreen.tsx
 │           └── GameScreen.tsx
+├── scripts/                generate-assets.mjs (Cloudflare AI), cutout.mjs, asset-prompts.json
 └── supabase/schema.sql
 ```
 

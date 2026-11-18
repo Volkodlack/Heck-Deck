@@ -1,0 +1,85 @@
+{
+  "style": "vintage 1930s rubber hose cartoon style, wobbly thick black ink outlines, cross-hatching and hatched shading, noodle limbs, oversized cartoon shoes and white gloves, big hollow black oval eyes, huge toothy grin, slightly creepy but playful, limited palette of toxic lime green and deep violet with off-white, flat colors, sticker illustration, plain flat white background, centered, no text, no watermark",
+  "assets": [
+    {
+      "name": "ghost",
+      "out": "sprites/ghost.png",
+      "prompt": "a lanky grinning bedsheet ghost leaning forward, its dripping sheet bottom splits into tentacle-like drips, two crossed noodle legs with striped socks and chunky sneakers, little white gloved hands touching the ground, violet sheet with toxic green glowing drips"
+    },
+    {
+      "name": "character",
+      "out": "sprites/character.png",
+      "prompt": "a chubby bean-shaped little character with a big round glass visor and a tiny backpack, noodle legs with cartoon shoes, walking pose, side view, pale body ready to recolor, violet shading"
+    },
+    {
+      "name": "possessed",
+      "out": "sprites/possessed.png",
+      "prompt": "a chubby bean-shaped character with a glass visor, its visor glowing toxic green, a sinister toothy grin reflected in the visor, violet smoke rising from its backpack, noodle legs"
+    },
+    {
+      "name": "poltergeist-card",
+      "out": "cards/poltergeist.png",
+      "prompt": "vertical playing card illustration, a mischievous grinning poltergeist ghost bursting out of the card frame, throwing playing cards around, toxic green ectoplasm splashes on a violet card border"
+    },
+    {
+      "name": "hex-ace",
+      "out": "cards/hex-ace.png",
+      "prompt": "vertical playing card illustration of a cursed ace of spades, the spade has big hollow eyes and a toothy grin, dripping toxic green slime, violet ornate border with small skulls"
+    },
+    {
+      "name": "hex-two",
+      "out": "cards/hex-two.png",
+      "prompt": "vertical playing card illustration of a cursed number two, the digit is a grinning noodle creature wrapped in green ghostly chains, violet border, sparks"
+    },
+    {
+      "name": "card-back",
+      "out": "cards/back.png",
+      "prompt": "symmetrical playing card back design, a grinning ghost face in the middle surrounded by hexagons and little pentagrams, violet background with toxic green linework, cross-hatched frame"
+    },
+    {
+      "name": "bell",
+      "out": "sprites/bell.png",
+      "prompt": "a big brass emergency bell with a grinning face and hollow eyes, noodle arms holding its own clapper, swinging, motion lines, violet and green highlights"
+    },
+    {
+      "name": "uv-lamp",
+      "out": "sprites/uv-lamp.png",
+      "prompt": "game item icon, a grinning handheld flashlight with noodle arms and gloves, emitting a violet ultraviolet beam"
+    },
+    {
+      "name": "salt",
+      "out": "sprites/salt.png",
+      "prompt": "game item icon, a nervous salt shaker with big eyes and noodle legs standing inside a protective circle of salt, green sparkles"
+    },
+    {
+      "name": "hall",
+      "out": "tiles/hall.png",
+      "prompt": "top-down view of a haunted mansion grand hall, worn violet carpet, wooden floorboards, a big bell in the middle, cobwebs, eerie green candle light, 2D game map background, no characters"
+    },
+    {
+      "name": "library",
+      "out": "tiles/library.png",
+      "prompt": "top-down view of a haunted library, tall bookshelves with grinning books, a round ritual table with a glowing green pentagram, 2D game map background, no characters"
+    },
+    {
+      "name": "kitchen",
+      "out": "tiles/kitchen.png",
+      "prompt": "top-down view of an abandoned old kitchen, cast iron stove with a grinning face, checkered floor, bubbling green pot, 2D game map background, no characters"
+    },
+    {
+      "name": "cellar",
+      "out": "tiles/cellar.png",
+      "prompt": "top-down view of a damp stone cellar, barrels, green puddles, candles, small round ritual table, 2D game map background, no characters"
+    },
+    {
+      "name": "attic",
+      "out": "tiles/attic.png",
+      "prompt": "top-down view of a dusty attic, wooden beams, old trunks, furniture under sheets that look like ghosts, violet moonlight, 2D game map background, no characters"
+    },
+    {
+      "name": "boom",
+      "out": "sprites/fx-boom.png",
+      "prompt": "comic book explosion burst bubble, jagged star shape, toxic green and violet, halftone dots, cross-hatched shadow, empty center for text"
+    }
+  ]
+}

@@ -39,6 +39,8 @@ export interface PlayerPublic {
   /** Rôle révélé (après élimination ou fin de partie), sinon null. */
   revealedRole: Role | null;
   connected: boolean;
+  /** Joueur IA (géré par le serveur). */
+  isBot: boolean;
 }
 
 export interface TablePlay {
@@ -164,6 +166,8 @@ export interface ClientToServer {
   'lobby:settings': (s: Partial<RoomSettings>) => void;
   'lobby:cosmetics': (c: Cosmetics) => void;
   'lobby:start': () => void;
+  'lobby:addBot': () => void;
+  'lobby:removeBot': (botId: string) => void;
   'lobby:leave': () => void;
   chat: (text: string) => void;
   move: (p: { x: number; y: number; facing: 1 | -1; moving: boolean }) => void;

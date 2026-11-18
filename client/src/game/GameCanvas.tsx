@@ -212,7 +212,7 @@ export default function GameCanvas({ inputLocked, onPrompt }: Props) {
         const partner = priv?.partners.includes(d.p.id);
         const known = d.p.revealedRole ?? mediumResults[d.p.id];
         const tag = known && ROLE_TAG[known] ? ` · ${ROLE_TAG[known]}` : '';
-        drawNameTag(ctx, d.x, d.y - 40, d.p.name + tag, partner || known === 'possessed' ? '#ff2e55' : d.isMe ? '#7dff3a' : '#f5ecd7');
+        drawNameTag(ctx, d.x, d.y - 40, (d.p.isBot ? '🤖 ' : '') + d.p.name + tag, partner || known === 'possessed' ? '#ff2e55' : d.isMe ? '#7dff3a' : '#f5ecd7');
         // Indicateur de parole / proximité vocale
         const lvl = voice.levels[d.p.id] ?? 0;
         if (!d.isMe && lvl > 0.05) {

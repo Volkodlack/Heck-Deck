@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "description": "HEX DECK — jeu web multijoueur de déduction sociale, chat vocal de proximité et cartes maudites dans un manoir hanté.",
-  "workspaces": ["client", "server"],
+  "workspaces": [
+    "client",
+    "server"
+  ],
   "scripts": {
     "dev": "concurrently -n server,client -c magenta,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
-    "test": "npm run test -w server"
+    "test": "npm run test -w server && npm run test:bots -w server",
+    "assets": "node scripts/generate-assets.mjs",
+    "assets:cutout": "node scripts/cutout.mjs"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "sharp": "^0.33.5"
   },
   "license": "MIT"
 }
