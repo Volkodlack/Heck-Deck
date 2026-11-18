@@ -78,3 +78,10 @@ jobs:
         with:
           files: apk/*.apk
           generate_release_notes: true
+          # v0.1.0-alpha.1, v1.0.0-beta… → pré-version
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## 📱 Installer sur Android
+            1. Télécharge le fichier **.apk** ci-dessous depuis ton téléphone.
+            2. Ouvre-le : Android demande d'autoriser l'installation depuis ton navigateur → *Autoriser*.
+            3. Lance **HEX DECK** : le tutoriel démarre au premier lancement.
