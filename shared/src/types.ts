@@ -39,8 +39,10 @@ export interface PlayerPublic {
   /** Rôle révélé (après élimination ou fin de partie), sinon null. */
   revealedRole: Role | null;
   connected: boolean;
-  /** Joueur IA (géré par le serveur). */
+  /** Joueur IA (géré par l'hôte). */
   isBot: boolean;
+  /** Id de compte Supabase annoncé (null = invité / bot). */
+  accountId: string | null;
 }
 
 export interface TablePlay {
@@ -111,6 +113,9 @@ export interface GameRoomState {
   skirmish: boolean;
   winner: { side: 'survivors' | 'possessed' | 'ghost' | 'player'; playerIds: string[]; reason: string } | null;
   now: number;
+  /** Identifiant unique de la partie (sert aux rapports de stats croisés). */
+  gameId: string;
+  startedAt: number;
 }
 
 /** État privé envoyé uniquement au joueur concerné. */
@@ -156,8 +161,8 @@ export interface FxEvent {
 export interface JoinPayload {
   name: string;
   cosmetics: Cosmetics;
-  /** Jeton Supabase (facultatif) pour lier les statistiques au profil. */
-  accessToken?: string;
+  /** Id de compte Supabase (facultatif) pour les statistiques croisées. */
+  accountId?: string;
 }
 
 export interface ClientToServer {

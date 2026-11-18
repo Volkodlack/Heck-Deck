@@ -1,9 +1,10 @@
 /**
- * HEX DECK — Serveur temps réel (Express + Socket.io).
- * - Gestion des lobbies (code à 6 lettres, 2 à 8 joueurs)
- * - Relais des intentions de jeu vers la GameRoom autoritaire
- * - Signalisation WebRTC (offres / réponses / ICE) pour le chat vocal de proximité
- * - En production, sert aussi le client compilé (client/dist)
+ * HEX DECK — Serveur dédié auto-hébergeable (Express + Socket.io).
+ *
+ * Optionnel : par défaut les joueurs hébergent leur partie directement dans l'appli (P2P).
+ * Ce serveur sert aux communautés qui veulent une salle permanente (LAN, association, Discord…).
+ * Il utilise exactement le même moteur (`shared/src/engine`) que l'hôte P2P.
+ * Il ne stocke rien : les statistiques passent par les rapports croisés Supabase des joueurs.
  */
 import { config } from 'dotenv';
 import express from 'express';
@@ -11,19 +12,22 @@ import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Server } from 'socket.io';
-import { GameRoom, type GameSocket, type IO } from './GameRoom';
-import { verifyToken } from './db';
-import type { Cosmetics, JoinPayload } from '../../shared/src/index';
+import { Server, type Socket } from 'socket.io';
+import { GameRoom, dispatchIntent, newRoomCode, sanitizeJoin } from '../../shared/src/engine';
+import type { ClientToServer, ServerToClient } from '../../shared/src/index';
+
+type IO = Server<ClientToServer, ServerToClient>;
+type GameSocket = Socket<ClientToServer, ServerToClient>;
 
 const here = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(here, '../../.env') });
 
 const PORT = Number(process.env.PORT ?? 3001);
-const ORIGIN = process.env.CLIENT_ORIGIN ?? 'http://localhost:5173';
+const ORIGIN = process.env.CLIENT_ORIGIN ?? '*';
 
 const app = express();
-app.get('/health', (_req, res) => { res.json({ ok: true, rooms: rooms.size }); });
+app.use((_req, res, next) => { res.setHeader('Access-Control-Allow-Origin', '*'); next(); });
+app.get('/health', (_req, res) => { res.json({ ok: true, game: 'hexdeck', rooms: rooms.size }); });
 
 const dist = resolve(here, '../../client/dist');
 if (existsSync(dist)) {
@@ -32,87 +36,68 @@ if (existsSync(dist)) {
 }
 
 const http = createServer(app);
-const io: IO = new Server(http, { cors: { origin: ORIGIN.split(','), credentials: true } });
-
+const io: IO = new Server(http, { cors: { origin: ORIGIN === '*' ? true : ORIGIN.split(','), credentials: true } });
 const rooms = new Map<string, GameRoom>();
-const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // sans I/O pour éviter les confusions
 
-function newCode(): string {
-  let code = '';
-  do code = Array.from({ length: 6 }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]).join('');
-  while (rooms.has(code));
-  return code;
-}
-
-const HATS: Cosmetics['hat'][] = ['none', 'tophat', 'witch', 'candle', 'horns'];
-function sanitize(p: JoinPayload): JoinPayload {
-  const color = /^#[0-9a-f]{6}$/i.test(p?.cosmetics?.color ?? '') ? p.cosmetics.color : '#c51111';
-  const hat = HATS.includes(p?.cosmetics?.hat) ? p.cosmetics.hat : 'none';
-  return { name: String(p?.name ?? 'Invité').replace(/[<>]/g, '').trim().slice(0, 16) || 'Invité', cosmetics: { color, hat }, accessToken: p?.accessToken };
-}
-
-function roomOf(socket: GameSocket): GameRoom | undefined {
-  return rooms.get(socket.data.room as string);
+function createRoom(): GameRoom {
+  let code = newRoomCode();
+  while (rooms.has(code)) code = newRoomCode();
+  const room = new GameRoom(code, {
+    all: (ev, ...args) => { io.to(code).emit(ev, ...args); },
+    to: (id, ev, ...args) => { io.to(id).emit(ev, ...args); },
+  });
+  room.onEmpty = () => rooms.delete(code);
+  rooms.set(code, room);
+  return room;
 }
 
 io.on('connection', (socket: GameSocket) => {
+  const roomOf = () => rooms.get(socket.data.room as string);
   const leaveCurrent = () => {
-    const r = roomOf(socket);
+    const r = roomOf();
     if (r) { r.removePlayer(socket.id); socket.leave(r.code); }
     socket.data.room = undefined;
   };
 
-  socket.on('lobby:create', async (raw, ack) => {
+  socket.on('lobby:create', (raw, ack) => {
     leaveCurrent();
-    const p = sanitize(raw);
-    const room = new GameRoom(newCode(), io);
-    room.onEmpty = () => rooms.delete(room.code);
-    rooms.set(room.code, room);
+    const room = createRoom();
     socket.data.room = room.code;
-    room.addPlayer(socket, p, await verifyToken(p.accessToken));
+    socket.join(room.code);
+    const p = sanitizeJoin(raw);
+    room.addPlayer(socket.id, p, p.accountId ?? null);
     ack?.({ ok: true, code: room.code });
   });
 
-  socket.on('lobby:join', async (raw, ack) => {
+  socket.on('lobby:join', (raw, ack) => {
     const code = String(raw?.code ?? '').toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return ack?.({ ok: false, error: 'Salle introuvable.' });
     if (!room.isOpen) return ack?.({ ok: false, error: 'Salle pleine ou partie en cours.' });
     leaveCurrent();
     socket.data.room = code;
-    const p = sanitize(raw);
-    room.addPlayer(socket, p, await verifyToken(p.accessToken));
+    socket.join(code);
+    const p = sanitizeJoin(raw);
+    room.addPlayer(socket.id, p, p.accountId ?? null);
     ack?.({ ok: true });
   });
 
   socket.on('lobby:leave', leaveCurrent);
-  socket.on('lobby:settings', (s) => roomOf(socket)?.updateSettings(socket.id, s ?? {}));
-  socket.on('lobby:cosmetics', (c) => roomOf(socket)?.updateCosmetics(socket.id, sanitize({ name: 'x', cosmetics: c }).cosmetics));
-  socket.on('lobby:start', () => roomOf(socket)?.start(socket.id));
-  socket.on('lobby:addBot', () => roomOf(socket)?.addBot(socket.id));
-  socket.on('lobby:removeBot', (id) => roomOf(socket)?.removeBot(socket.id, String(id)));
-  socket.on('chat', (t) => roomOf(socket)?.chat(socket.id, String(t ?? '')));
+  socket.on('disconnect', leaveCurrent);
 
-  socket.on('move', (m) => roomOf(socket)?.move(socket.id, m));
-  socket.on('search', (f) => roomOf(socket)?.search(socket.id, String(f)));
-  socket.on('item:use', (i) => (i === 'uv' || i === 'salt') && roomOf(socket)?.useItem(socket.id, i));
-  socket.on('table:sit', (t) => roomOf(socket)?.sit(socket.id, String(t)));
-  socket.on('table:leave', () => roomOf(socket)?.leave(socket.id));
-  socket.on('table:play', (ids) => Array.isArray(ids) && roomOf(socket)?.play(socket.id, ids.map(String)));
-  socket.on('table:pass', () => roomOf(socket)?.pass(socket.id));
-  socket.on('sabotage', (s) => s && roomOf(socket)?.doSabotage(socket.id, s));
-  socket.on('hex:slip', (s) => s && roomOf(socket)?.slip(socket.id, String(s.targetId), String(s.cardId)));
-  socket.on('medium:inspect', (t) => roomOf(socket)?.inspect(socket.id, String(t)));
-  socket.on('bell', () => roomOf(socket)?.ringBell(socket.id));
-  socket.on('vote', (t) => roomOf(socket)?.vote(socket.id, String(t)));
-
-  // Signalisation WebRTC : on ne relaie qu'entre membres de la même salle.
-  socket.on('rtc:signal', ({ to, data }) => {
-    const target = io.sockets.sockets.get(String(to));
-    if (target && target.data.room === socket.data.room) target.emit('rtc:signal', { from: socket.id, data });
+  // Signalisation WebRTC (voix) : relais entre membres de la même salle uniquement.
+  socket.on('rtc:signal', (p) => {
+    const target = io.sockets.sockets.get(String(p?.to));
+    if (target && target.data.room === socket.data.room) target.emit('rtc:signal', { from: socket.id, data: p.data });
   });
 
-  socket.on('disconnect', leaveCurrent);
+  // Toutes les autres intentions → moteur (validation côté moteur)
+  const transportEvents = new Set(['lobby:create', 'lobby:join', 'lobby:leave', 'rtc:signal']);
+  socket.onAny((ev: string, ...args: unknown[]) => {
+    if (transportEvents.has(ev)) return;
+    const r = roomOf();
+    if (r) dispatchIntent(r, socket.id, ev, args);
+  });
 });
 
-http.listen(PORT, () => console.log(`👻 HEX DECK server sur http://localhost:${PORT} (client autorisé : ${ORIGIN})`));
+http.listen(PORT, () => console.log(`👻 HEX DECK server sur http://localhost:${PORT}`));

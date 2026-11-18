@@ -2,16 +2,16 @@
  * Connexion Socket.io + petit store global (pas de dépendance type Redux).
  * Les composants s'abonnent via useGame().
  */
-import { io, type Socket } from 'socket.io-client';
 import { useSyncExternalStore } from 'react';
-import type { ChatMessage, ClientToServer, FxEvent, GameRoomState, PrivateState, Role, ServerToClient } from '@shared';
+import type { ChatMessage, FxEvent, GameRoomState, PrivateState, Role } from '@shared';
+import { net } from './net/proxy';
 
-const SERVER_URL = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? (import.meta.env.DEV ? `http://${location.hostname}:3001` : location.origin);
-
-export const socket: Socket<ServerToClient, ClientToServer> = io(SERVER_URL, { autoConnect: true, transports: ['websocket', 'polling'] });
+/** Alias historique : `socket` est le proxy réseau (local, P2P ou serveur dédié). */
+export const socket = net;
+export { net };
 
 // Accès console en développement (débogage / tests automatisés).
-if (import.meta.env.DEV) (window as unknown as { __hexSocket: typeof socket }).__hexSocket = socket;
+if (import.meta.env.DEV) Object.assign(window, { __hexSocket: socket, __hexStore: () => store });
 
 export interface FxInstance extends FxEvent { key: number; at: number }
 
@@ -25,9 +25,11 @@ interface Store {
   mediumResults: Record<string, Role>;
   /** Décalage d'horloge serveur → client (pour les timers). */
   clockSkew: number;
+  /** Partie de tutoriel en cours. */
+  tutorial: boolean;
 }
 
-let store: Store = { connected: false, state: null, me: null, chat: [], fx: [], toasts: [], mediumResults: {}, clockSkew: 0 };
+let store: Store = { connected: false, state: null, me: null, chat: [], fx: [], toasts: [], mediumResults: {}, clockSkew: 0, tutorial: false };
 const listeners = new Set<() => void>();
 const fxListeners = new Set<(f: FxEvent) => void>();
 let seq = 0;
@@ -41,6 +43,7 @@ export function useGame(): Store {
   return useSyncExternalStore((cb) => { listeners.add(cb); return () => listeners.delete(cb); }, () => store);
 }
 export const getStore = () => store;
+export const setTutorial = (tutorial: boolean) => set({ tutorial });
 
 /** Permet au moteur audio / canvas de réagir aux effets sans passer par React. */
 export function onFx(cb: (f: FxEvent) => void): () => void { fxListeners.add(cb); return () => { fxListeners.delete(cb); }; }
@@ -51,12 +54,14 @@ export function toast(text: string) {
   setTimeout(() => set({ toasts: store.toasts.filter((t) => t.key !== key) }), 3500);
 }
 
+/** Quitte la salle courante (ferme le moteur local / la connexion). */
 export function resetRoom() {
+  net.detach('leave');
   set({ state: null, me: null, chat: [], fx: [], mediumResults: {} });
 }
 
 socket.on('connect', () => set({ connected: true }));
-socket.on('disconnect', () => set({ connected: false, state: null, me: null }));
+socket.on('disconnect', () => set({ connected: false, state: null, me: null, chat: [], fx: [], mediumResults: {}, tutorial: false }));
 socket.on('state', (s) => set({ state: s, clockSkew: s.now - Date.now() }));
 socket.on('you', (me) => set({ me }));
 socket.on('chat', (m) => set({ chat: [...store.chat, m].slice(-80) }));

@@ -17,8 +17,8 @@
 import {
   BELL, DOORS, FURNITURE, INTERACT_RANGE, PLAYER_SPEED, ROOMS, SLIP_RANGE, WALL,
   collides, dist, isHex, moveWithCollisions, roomAt, solidRects, validatePlay,
-} from '../../shared/src/index';
-import type { Card, RoomId, SabotageType, TablePlay } from '../../shared/src/index';
+} from '../index';
+import type { Card, RoomId, SabotageType, TablePlay } from '../index';
 import type { GameRoom, Player } from './GameRoom';
 
 export const BOT_NAMES = ['Bot Casper', 'Bot Boo', 'Bot Spectro', 'Bot Ectoplasme', 'Bot Banshee', 'Bot Wraith', 'Bot Grimoire', 'Bot Feu-Follet'];

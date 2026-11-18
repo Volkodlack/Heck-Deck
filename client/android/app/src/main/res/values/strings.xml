@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HEX DECK</string>
+    <string name="title_activity_main">HEX DECK</string>
+    <string name="package_name">com.volkodlack.hexdeck</string>
+    <string name="custom_url_scheme">com.volkodlack.hexdeck</string>
+</resources>

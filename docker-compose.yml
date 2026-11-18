@@ -1,0 +1,7 @@
+# Serveur dédié HEX DECK : docker compose up -d
+services:
+  hexdeck:
+    build: .
+    ports:
+      - "3001:3001"
+    restart: unless-stopped

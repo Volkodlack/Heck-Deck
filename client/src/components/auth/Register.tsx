@@ -21,7 +21,7 @@ export default function Register({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="h-full overflow-y-auto flex flex-col items-center justify-center gap-6 p-6">
+    <div className="compact-page h-full overflow-y-auto flex flex-col items-center justify-center gap-6 p-6">
       <Logo small className="w-full" />
       <form className="panel p-6 flex flex-col gap-3 w-full max-w-md" onSubmit={submit}>
         <h2 className="font-comic text-3xl text-toxic comic-stroke">NOUVEAU PROFIL</h2>

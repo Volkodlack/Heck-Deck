@@ -8,65 +8,150 @@ Jeu web multijoueur (2 à 8 joueurs) dans un manoir hanté, qui mêle trois chos
 Tout le rendu (personnages, cartes, décors, onomatopées) est en **SVG / Canvas** et tous les sons sont
 **synthétisés** avec la Web Audio API. Le jeu se lance donc sans télécharger le moindre asset.
 
+Disponible en **site web** (GitHub Pages) et en **APK Android** (Capacitor). Les parties sont hébergées
+par les joueurs eux-mêmes, et seuls les comptes, la progression et les statistiques sont centralisés.
+
 ---
 
-## 🚀 Installation
+## 🏠 Architecture : les joueurs hébergent, toi tu ne gardes que les stats
 
-Prérequis : **Node.js 20+**.
+```
+            ┌──────────── Supabase (gratuit) ────────────┐
+            │ comptes · progression (XP, tuto, chapeaux)  │
+            │ stats classées (rapports croisés)           │
+            │ mise en relation P2P (Realtime, ~1 Ko)      │
+            └─────────────▲───────────────▲───────────────┘
+                          │ fin de partie │ code de salle
+   ┌──────────────────────┴───┐      ┌────┴──────────────────┐
+   │ HÔTE (site ou APK)       │◀────▶│ INVITÉS (site ou APK)  │
+   │ moteur de jeu (Worker)   │WebRTC│ rendu + voix           │
+   │ + bots                   │ P2P  │                        │
+   └──────────────────────────┘      └────────────────────────┘
+          TURN Cloudflare (relais si réseau strict, 1 000 Go/mois gratuits)
+```
+
+- **Solo et tutoriel** : 100 % hors-ligne, le moteur et les bots tournent sur l'appareil.
+- **En ligne** : la partie tourne sur l'appareil de l'hôte. Les invités s'y connectent directement
+  en WebRTC avec le code à 6 lettres, et Supabase ne sert qu'à la mise en relation.
+- **Serveur dédié (optionnel)** : pour une salle permanente (LAN, association, Discord), avec
+  `docker compose up -d` ou `npm start`. C'est le même moteur.
+- **Ce qui est stocké chez toi** : uniquement les profils, la progression et les statistiques.
+
+Le même moteur (`shared/src/engine`) tourne sur le serveur Node, dans le navigateur (Web Worker) et
+dans l'APK.
+
+### Statistiques sans serveur de jeu central
+Comme les parties tournent chez les joueurs, chaque joueur connecté envoie **son propre** rapport de
+fin de partie (`submit_game_report`), avec son compte.
+- **Progression (XP, niveaux, chapeaux)** : toujours accordée, y compris contre les bots (moitié
+  d'XP), avec une limite de 40 rapports par jour.
+- **Stats classées** (parties, victoires) : une partie ne compte que si **au moins 2 comptes
+  différents** envoient des rapports **concordants** (même partie, même camp vainqueur, même liste de
+  joueurs), **sans bots**, avec au moins 3 humains et 3 minutes de jeu (limite : 15 par jour).
+  Un tricheur seul ne peut donc pas s'inventer des victoires.
+- Limite connue : quelqu'un qui joue avec 2 comptes à lui peut gonfler ses stats (dans la limite
+  quotidienne). L'XP reste déclarative.
+
+---
+
+## 🚀 Installation (développement)
+
+Prérequis : **Node.js 20+** (22 recommandé).
 
 ```bash
 git clone https://github.com/Volkodlack/Heck-Deck.git
 cd Heck-Deck
 npm install
-cp .env.example .env      # facultatif : sans Supabase, le jeu tourne en mode Invité
-npm run dev               # serveur :3001 + client :5173
+cp .env.example .env
+npm run dev               # site sur :5173 (+ serveur dédié local sur :3001)
 ```
 
-Ouvre **http://localhost:5173** dans plusieurs onglets (ou sur plusieurs machines du réseau local via
-`http://<ip-du-pc>:5173`), entre en **Invité rapide**, crée une salle et partage le code à 6 lettres.
+Sans Supabase, le solo et le tutoriel fonctionnent. En mode dev, « Héberger » marche aussi entre deux
+**onglets du même navigateur**, pour tester le P2P sans rien configurer.
 
 | Commande | Rôle |
 |---|---|
-| `npm run dev` | Serveur Socket.io (rechargement auto) + client Vite |
-| `npm run build` | Compile le client dans `client/dist` |
-| `npm start` | Lance le serveur, qui sert aussi `client/dist` (production, un seul port) |
-| `npm run typecheck` | Vérification TypeScript (client + serveur) |
-| `npm test` | Tests de bout en bout : partie à 4 clients simulés + partie contre les bots |
-| `npm run assets` | Génère les visuels via Cloudflare Workers AI (voir ASSETS_GUIDE) |
-| `npm run assets:cutout` | Détoure les visuels générés en PNG transparents |
-
-### 🤖 Tester en solo avec des bots
-Dans le lobby, l'hôte clique sur **« + AJOUTER UN BOT »** (autant de fois qu'il le faut, jusqu'à 8
-joueurs au total). Les bots sont gérés par le serveur (`server/src/bots.ts`) et passent par les mêmes
-validations que les humains :
-- ils naviguent de pièce en pièce par les portes et contournent une pièce verrouillée ;
-- ils fouillent les meubles, utilisent leurs objets, s'assoient aux tables et jouent aux cartes (ils
-  brûlent le pli avec leurs 2 et se débarrassent des cartes Maudites avant la fin) ;
-- en **Possédé**, ils traquent un Survivant pour lui refiler une Hex Card, sabotent et accusent un innocent ;
-- en **Survivant**, ils soupçonnent celui qui leur a refilé une carte (pas toujours le bon), sonnent la
-  cloche, s'expriment dans le chat de réunion et votent.
-
-Avec 1 bot, tu joues en mode Escarmouche. À partir de 3 bots, un Possédé caché est tiré au sort, et
-ça peut être toi. Les bots n'ont pas de voix.
-
-> 🎙️ Le micro ne fonctionne que sur `localhost` ou en **HTTPS** (règle des navigateurs). Sans micro,
-> tu entends quand même les autres.
+| `npm run dev` | Site (Vite) + serveur dédié local |
+| `npm run build` | Compile le site dans `client/dist` |
+| `npm start` | Serveur dédié (sert aussi le site compilé) |
+| `npm run typecheck` | Vérification TypeScript |
+| `npm test` | Tests : partie à 4 clients + partie contre les bots |
+| `npm run assets` / `assets:cutout` | Génération des visuels via Cloudflare AI / détourage |
 
 ---
 
-## 🔐 Comptes & statistiques (Supabase, facultatif)
+## ☁️ Mise en ligne (une seule fois)
 
+### 1. Supabase : comptes, stats et mise en relation
 1. Crée un projet gratuit sur https://supabase.com.
-2. **SQL Editor** → colle et exécute `supabase/schema.sql` (profils, sécurité RLS, trigger d'inscription,
-   fonction de statistiques, chapeaux débloqués au fil des victoires).
-3. **Project Settings → API** → remplis `.env` :
-   - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (client)
-   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (serveur uniquement, ne jamais l'exposer)
-4. Google OAuth : **Authentication → Providers → Google** (identifiants depuis Google Cloud Console),
-   puis ajoute `http://localhost:5173` dans **Authentication → URL Configuration → Redirect URLs**.
+2. **SQL Editor** → exécute `supabase/schema.sql`. Il est ré-exécutable, donc tu peux le relancer
+   après chaque mise à jour.
+3. **Project Settings → API** → copie l'URL et la clé `anon` (elle est publique par nature).
+4. Google OAuth (facultatif) : **Authentication → Providers → Google**, et ajoute l'URL du site dans
+   **Authentication → URL Configuration**.
 
-Les statistiques sont écrites **par le serveur uniquement**, après vérification du jeton du joueur. Un
-client ne peut donc pas gonfler ses victoires.
+### 2. Cloudflare TURN : relais pour les réseaux stricts (recommandé)
+1. Dashboard Cloudflare → **Realtime → TURN Server** → crée une clé (Key ID + API token).
+2. Déploie l'Edge Function avec la CLI Supabase :
+   ```bash
+   supabase secrets set CF_TURN_KEY_ID=… CF_TURN_KEY_API_TOKEN=…
+   supabase functions deploy turn-credentials
+   ```
+   Sans cette étape, le jeu utilise seulement le STUN gratuit de Cloudflare. Ça suffit dans la plupart
+   des cas, mais pas derrière certaines 4G ou certains Wi-Fi d'entreprise.
+
+### 3. Variables GitHub (site + APK)
+**Settings → Secrets and variables → Actions → onglet Variables** :
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (et éventuellement `VITE_SERVER_URL`, un serveur dédié
+proposé par défaut).
+
+### 4. Site : GitHub Pages
+**Settings → Pages → Source : GitHub Actions**. À chaque push sur `main`, le workflow
+`Site (GitHub Pages)` publie le jeu sur `https://volkodlack.github.io/Heck-Deck/`.
+
+### 5. APK Android
+Le workflow `APK Android` compile l'APK à chaque push. Tu le télécharges dans
+**Actions → APK Android → Artifacts → hexdeck-apk**. Pour une version officielle, pousse un tag :
+```bash
+git tag v0.2.0 && git push origin v0.2.0      # → Release GitHub avec l'APK attaché
+```
+Pour un APK **signé** (mises à jour sans désinstaller, Play Store), crée un keystore une fois :
+```bash
+keytool -genkey -v -keystore hexdeck.jks -alias hexdeck -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 hexdeck.jks   # → secret ANDROID_KEYSTORE_BASE64
+```
+Ajoute ensuite les **secrets** `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` et `ANDROID_KEY_PASSWORD`. Garde `hexdeck.jks` en lieu sûr : sans lui, tu ne
+pourras plus publier de mise à jour de l'appli.
+
+**Ce que l'APK fait en plus du site :** orientation paysage, joystick tactile, permission micro, et
+un service Android au premier plan (notification « tu héberges la partie ») qui garde la partie en vie
+quand l'hôte change d'appli.
+Limite actuelle : la connexion Google ne fonctionne pas encore dans l'APK (il faudra un « deep
+link »). Email/mot de passe et Invité fonctionnent.
+
+Pour compiler en local : Android Studio, puis `npm run build -w client && cd client && npx cap sync android && npx cap open android`.
+
+### 6. Serveur dédié (optionnel, pour les communautés)
+```bash
+docker compose up -d        # ou : npm run build && npm start
+```
+Les joueurs entrent l'adresse (ex. `http://192.168.1.20:3001`) dans **En ligne → Serveur dédié**.
+
+---
+
+## 🤖 Bots & tutoriel
+Au **premier lancement**, le tutoriel démarre automatiquement : une vraie partie hors-ligne contre 3
+bots, où tu es Survivant. Les étapes se valident toutes seules (bouger, fouiller, s'asseoir, poser
+des cartes, quitter la table, sonner la cloche, voter). On peut le revoir depuis l'accueil, et le
+terminer rapporte +100 XP une fois.
+
+Les bots (`shared/src/engine/bots.ts`) passent par les mêmes validations que les humains :
+- ils naviguent de pièce en pièce ;
+- ils jouent aux cartes, sabotent et refilent des Hex Cards ;
+- ils accusent, discutent dans le chat et votent.
+
+En solo, choisis de 1 à 7 bots. En ligne, l'hôte peut en ajouter depuis le lobby.
 
 ---
 
@@ -74,39 +159,26 @@ client ne peut donc pas gonfler ses victoires.
 
 ```
 Heck-Deck/
-├── shared/src/               Code commun client + serveur
-│   ├── types.ts              Types d'état et événements Socket.io
-│   ├── cards.ts              Paquet, hiérarchie, validation des coups
-│   ├── map.ts                Plan du manoir, collisions, murs (voix), rôles
-│   └── index.ts              Constantes d'équilibrage (BALANCE)
-├── server/
-│   ├── src/server.ts         Express + Socket.io, lobbies, signalisation WebRTC
-│   ├── src/GameRoom.ts       Machine à états, cartes, sabotages, votes, Fantôme IA
-│   ├── src/bots.ts           Joueurs IA (navigation, cartes, sabotages, votes)
-│   ├── src/db.ts             Supabase côté serveur (facultatif)
-│   └── test/                 smoke.ts (partie 4 joueurs), bots.ts (partie solo)
+├── shared/src/
+│   ├── engine/               Moteur de jeu indépendant du réseau
+│   │   ├── GameRoom.ts       Phases, cartes, sabotages, votes, Fantôme IA
+│   │   ├── bots.ts           Joueurs IA
+│   │   └── dispatch.ts       Intentions client → moteur (assainies)
+│   ├── types.ts · cards.ts · map.ts · index.ts (BALANCE)
 ├── client/
-│   ├── public/assets/        sprites/ tiles/ audio/ cards/ + ASSETS_GUIDE.md
-│   └── src/
-│       ├── App.tsx           Auth → accueil → lobby → partie
-│       ├── lib/              socket (store), supabase, session
-│       ├── game/
-│       │   ├── GameCanvas.tsx   Rendu Canvas 2D, lumière dynamique, prédiction
-│       │   ├── draw.ts          Dessin procédural (persos, meubles, fantôme, BD)
-│       │   ├── SoundEffects.ts  Bruitages & ambiance synthétisés
-│       │   └── VoiceChat.ts     WebRTC + spatialisation (Panner/Gain/filtre)
-│       └── components/
-│           ├── Logo.tsx, Avatar.tsx, PlayingCard.tsx, ComicFx.tsx
-│           ├── auth/Login.tsx, auth/Register.tsx
-│           ├── Home.tsx, LobbyRoom.tsx, ChatBox.tsx
-│           ├── HUD.tsx, CardTableModal.tsx, VoteModal.tsx, EndScreen.tsx
-│           └── GameScreen.tsx
-├── scripts/                generate-assets.mjs (Cloudflare AI), cutout.mjs, asset-prompts.json
-└── supabase/schema.sql
+│   ├── src/lib/net/          proxy.ts · backends.ts (local / hôte P2P / invité / serveur)
+│   │                         engine.worker.ts · signaling.ts · ice.ts
+│   ├── src/lib/              play.ts (modes) · progress.ts (XP & stats) · native.ts (Android)
+│   ├── src/game/             GameCanvas · draw · SoundEffects · VoiceChat · touch
+│   ├── src/components/       Home · LobbyRoom · HUD · CardTableModal · VoteModal · Tutorial · TouchControls…
+│   ├── android/              Projet Capacitor (HostService.java : partie en arrière-plan)
+│   └── public/assets/        ASSETS_GUIDE.md
+├── server/src/server.ts      Serveur dédié optionnel (Socket.io) · test/
+├── supabase/                 schema.sql · functions/turn-credentials
+├── scripts/                  génération des visuels (Cloudflare AI) · détourage
+├── .github/workflows/        tests · APK Android · GitHub Pages
+└── Dockerfile · docker-compose.yml
 ```
-
-> Le cahier des charges parlait d'un `server.js` : ici c'est `server/src/server.ts` (TypeScript exécuté
-> directement par `tsx`, sans étape de compilation).
 
 ---
 
@@ -154,17 +226,11 @@ dans `BALANCE` (`shared/src/index.ts`).
 ---
 
 ## 🛡️ Anti-triche
-Le serveur fait autorité sur tout. Les clients n'envoient que des intentions :
+Le moteur de l'hôte fait autorité sur tout. Les autres joueurs n'envoient que des intentions :
 - Les mains et les rôles restent secrets. Chaque joueur ne reçoit que son propre état, et les Possédés voient seulement leurs complices.
 - Chaque coup est revalidé : tour de jeu, cartes réellement possédées, règle de valeur et de quantité.
 - Les déplacements sont contrôlés (vitesse maximale, collisions avec les murs et les portes verrouillées).
 - Le serveur vérifie la portée de chaque interaction (fouille, table, cloche, refilage) et applique les temps de recharge.
-
-## 🌐 Déploiement
-`npm run build && npm start` sert le client et le serveur sur un seul port. Ça fonctionne sur
-n'importe quel hébergeur Node qui gère les WebSockets (Render, Railway, Fly.io, ou un VPS). Mets le
-jeu derrière HTTPS pour que le micro fonctionne. Pour les réseaux très restrictifs, ajoute un serveur
-TURN (par exemple coturn, open source) dans `ICE` de `VoiceChat.ts`.
 
 ## 🎨 Assets
 Voir [`client/public/assets/ASSETS_GUIDE.md`](client/public/assets/ASSETS_GUIDE.md) : prompts d'IA prêts

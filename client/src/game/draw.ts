@@ -102,6 +102,7 @@ export function drawNameTag(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.save();
   ctx.font = '16px Bangers, Impact, sans-serif';
   ctx.textAlign = 'center';
+  ctx.lineJoin = 'round'; // évite les pics de contour sur certaines lettres (M, V…)
   ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.strokeText(text, x, y);
   ctx.fillStyle = color; ctx.fillText(text, x, y);
   ctx.restore();
@@ -239,6 +240,7 @@ export function drawBurst(ctx: CanvasRenderingContext2D, x: number, y: number, t
   }
   ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
   ctx.lineWidth = 6; ctx.strokeText(text, 0, 2);
   ctx.fillStyle = '#fff'; ctx.fillText(text, 0, 2);
   ctx.restore();

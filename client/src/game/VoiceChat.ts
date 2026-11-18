@@ -7,12 +7,11 @@
  */
 import { BALANCE, dist, wallsBetween, type RoomId } from '@shared';
 import { socket } from '../lib/socket';
+import { getIceServers } from '../lib/net/ice';
 import { SFX } from './SoundEffects';
 
-const ICE: RTCConfiguration = {
-  // Serveurs STUN publics gratuits. Pour les réseaux stricts, ajoute un TURN (ex : coturn auto-hébergé).
-  iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
-};
+// STUN Cloudflare + TURN Cloudflare (via Edge Function) quand disponible — voir lib/net/ice.ts
+let ICE: RTCConfiguration = { iceServers: [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }] };
 
 interface Peer {
   pc: RTCPeerConnection;
@@ -44,6 +43,7 @@ export class VoiceChat {
 
   async start() {
     SFX.unlock();
+    ICE = { iceServers: await getIceServers() };
     try {
       this.local = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       this.micAvailable = true;
@@ -203,3 +203,4 @@ type Signal =
   | { type: 'candidate'; candidate: RTCIceCandidateInit };
 
 export const voice = new VoiceChat();
+if (import.meta.env.DEV) Object.assign(window, { __hexVoice: voice });

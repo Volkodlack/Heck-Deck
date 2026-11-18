@@ -19,12 +19,17 @@ export default function LobbyRoom({ cosmetics, onCosmetics }: { cosmetics: Cosme
   const copy = () => { navigator.clipboard?.writeText(state.code); toast('Code copié !'); };
 
   return (
-    <div className="h-full flex flex-col gap-4 p-4 max-w-6xl mx-auto">
+    <div className="compact-page h-full flex flex-col gap-4 p-4 max-w-6xl mx-auto overflow-y-auto">
       <header className="flex items-center justify-between gap-4 flex-wrap">
         <Logo small className="w-60" />
-        <button onClick={copy} className="panel px-5 py-2 font-pixel text-2xl tracking-[0.3em] text-toxic hover:rotate-1" title="Copier le code">
-          {state.code}
-        </button>
+        {socket.kind === 'local' ? (
+          <span className="panel px-5 py-2 font-comic text-2xl text-hexviolet">PARTIE SOLO · HORS-LIGNE</span>
+        ) : (
+          <button onClick={copy} className="panel px-5 py-2 flex flex-col items-center hover:rotate-1" title="Copier le code">
+            <span className="font-pixel text-2xl tracking-[0.3em] text-toxic">{state.code}</span>
+            <span className="text-[10px] opacity-70">{socket.kind === 'host' ? 'Hébergée sur ton appareil · partage ce code' : socket.kind === 'guest' ? 'Partie hébergée par l’hôte' : 'Serveur dédié'}</span>
+          </button>
+        )}
         <button className="btn-ghost !text-base" onClick={() => { socket.emit('lobby:leave'); resetRoom(); }}>QUITTER</button>
       </header>
 

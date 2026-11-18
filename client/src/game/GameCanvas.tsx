@@ -16,6 +16,7 @@ import { getStore, onFx, serverNow, socket } from '../lib/socket';
 import { drawBell, drawBurst, drawCharacter, drawFurniture, drawGhost, drawNameTag, drawRitualTable, roundRect } from './draw';
 import { SFX } from './SoundEffects';
 import { voice } from './VoiceChat';
+import { touchInput } from './touch';
 
 export interface Prompt { kind: 'search' | 'sit' | 'bell' | 'slip'; label: string; targetId: string }
 
@@ -129,10 +130,12 @@ export default function GameCanvas({ inputLocked, onPrompt }: Props) {
         if (keys.has('KeyS') || keys.has('ArrowDown')) dy += 1;
         if (keys.has('KeyA') || keys.has('ArrowLeft')) dx -= 1;
         if (keys.has('KeyD') || keys.has('ArrowRight')) dx += 1;
+        // Joystick tactile (analogique)
+        if (dx === 0 && dy === 0 && (touchInput.x || touchInput.y)) { dx = touchInput.x; dy = touchInput.y; }
       }
       me.moving = dx !== 0 || dy !== 0;
       if (me.moving) {
-        const len = Math.hypot(dx, dy);
+        const len = Math.max(1, Math.hypot(dx, dy)); // joystick : vitesse proportionnelle (≤ 1)
         const step = PLAYER_SPEED * dt;
         if (dx !== 0) me.facing = dx > 0 ? 1 : -1;
         if (self.alive) Object.assign(me, moveWithCollisions(me.x, me.y, (dx / len) * step, (dy / len) * step, solidRects(locked)));

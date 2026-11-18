@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { io, type Socket } from 'socket.io-client';
 import { createDeck, validatePlay, type Card, type ClientToServer, type FxEvent, type GameRoomState, type ServerToClient } from '../../shared/src/index';
-import { chooseCards } from '../src/bots';
+import { chooseCards } from '../../shared/src/engine';
 
 // ---------- IA de cartes ----------
 const deck = createDeck();

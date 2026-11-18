@@ -19,7 +19,7 @@ export default function VoteModal() {
   const vote = (id: string) => { SFX.vote(); socket.emit('vote', id); };
 
   return (
-    <div className="absolute inset-0 z-40 bg-black/75 flex items-center justify-center p-3">
+    <div className="compact-ui absolute inset-0 z-40 bg-black/75 flex items-center justify-center p-3">
       <div className="grid gap-3 md:grid-cols-3 w-full max-w-6xl h-full max-h-[700px]">
         <div className="panel p-4 md:col-span-2 flex flex-col gap-3 overflow-y-auto">
           <div className="flex items-center justify-between">

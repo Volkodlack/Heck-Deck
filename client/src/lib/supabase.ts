@@ -19,6 +19,8 @@ export interface Profile {
   games_played: number;
   wins_survivor: number;
   wins_possessed: number;
+  xp: number;
+  tutorial_done: boolean;
 }
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {

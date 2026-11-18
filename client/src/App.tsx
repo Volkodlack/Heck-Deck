@@ -11,8 +11,11 @@ import GameScreen from './components/GameScreen';
 import { fetchProfile, saveProfile, supabase } from './lib/supabase';
 import { loadGuest, saveGuest, type Session } from './lib/session';
 import { onFx, socket, useGame } from './lib/socket';
+import { playTutorial } from './lib/play';
+import { reportGame, tutorialDone } from './lib/progress';
 import { SFX } from './game/SoundEffects';
 import { voice } from './game/VoiceChat';
+import { setHosting } from './lib/native';
 
 const FX_SOUND: Partial<Record<FxEvent['type'], () => void>> = {
   boom: () => SFX.boom(), sabotage: () => SFX.sabotage(), hexed: () => SFX.hexed(), curse: () => SFX.curse(),
@@ -23,8 +26,9 @@ const FX_SOUND: Partial<Record<FxEvent['type'], () => void>> = {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<'login' | 'register'>('login');
-  const { state, connected } = useGame();
+  const { state, me } = useGame();
   const voiceStarted = useRef(false);
+  const tutoLaunched = useRef(false);
 
   /* ---------- Auth Supabase ---------- */
   useEffect(() => {
@@ -46,9 +50,29 @@ export default function App() {
   /* ---------- Sons des effets serveur ---------- */
   useEffect(() => onFx((f) => { if (!f.only || f.only === socket.id) FX_SOUND[f.type]?.(); }), []);
 
-  /* ---------- Voix & ambiance selon la phase ---------- */
+  /* ---------- Tutoriel automatique au premier lancement ---------- */
   useEffect(() => {
-    if (state && !voiceStarted.current) { voiceStarted.current = true; void voice.start(); }
+    if (!session || state || tutoLaunched.current) return;
+    // Attendre le profil pour un compte (tutorial_done peut venir de la base)
+    if (session.kind === 'user' && session.profile === undefined) return;
+    tutoLaunched.current = true;
+    if (!tutorialDone(session)) void playTutorial(session);
+  }, [session, state]);
+
+  /* ---------- Rapport de fin de partie (progression & stats croisées) ---------- */
+  useEffect(() => {
+    if (state?.phase === 'ended' && me && socket.id) void reportGame(state, me, socket.id, session, socket.kind);
+  }, [state?.phase, state?.gameId]);
+
+  /* ---------- Android : service au premier plan pendant qu'on héberge ---------- */
+  useEffect(() => {
+    void setHosting(!!state && socket.kind === 'host', state ? `Salle ${state.code} · ${state.players.filter((p) => p.connected && !p.isBot).length} joueur(s)` : '');
+  }, [state?.code, state?.players.length]);
+
+  /* ---------- Voix (parties en ligne uniquement) & ambiance ---------- */
+  useEffect(() => {
+    const online = socket.kind === 'host' || socket.kind === 'guest' || socket.kind === 'server';
+    if (state && online && !voiceStarted.current) { voiceStarted.current = true; void voice.start(); }
     if (!state && voiceStarted.current) { voiceStarted.current = false; voice.stop(); }
     if (state && state.phase !== 'lobby') SFX.startAmbience(); else SFX.stopAmbience();
   }, [state?.code, state?.phase]);
@@ -71,15 +95,6 @@ export default function App() {
     setSession(null);
   }
 
-  if (!connected) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center gap-3">
-        <p className="font-comic text-4xl comic-stroke animate-pulse">CONNEXION AU MANOIR…</p>
-        <p className="text-sm opacity-60">Le serveur Socket.io tourne-t-il ? (<code>npm run dev</code>)</p>
-      </div>
-    );
-  }
-
   if (!session) {
     return view === 'register'
       ? <Register onBack={() => setView('login')} />
@@ -93,5 +108,5 @@ export default function App() {
 
   if (!state) return <Home session={session} onCosmetics={updateCosmetics} onLogout={logout} />;
   if (state.phase === 'lobby') return <LobbyRoom cosmetics={session.cosmetics} onCosmetics={updateCosmetics} />;
-  return <GameScreen />;
+  return <GameScreen session={session} />;
 }

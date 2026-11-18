@@ -2,21 +2,36 @@
  * HEX DECK — Salle de jeu autoritaire.
  * Le serveur est la seule source de vérité : mains, rôles, coups de cartes, sabotages, votes.
  * Les clients n'envoient que des INTENTIONS, toutes revalidées ici (anti-triche).
+ *
+ * Le moteur ne connaît aucun réseau : il parle à travers une `EngineOutput`. Il tourne donc
+ * à l'identique sur un serveur Node (Socket.io), dans le navigateur de l'hôte (P2P / WebRTC)
+ * ou hors-ligne (solo, tutoriel).
  */
-import type { Server, Socket } from 'socket.io';
 import {
   BALANCE, BELL, FURNITURE, GHOST_PATH, INTERACT_RANGE, PLAYER_SPEED, RITUAL_TABLES, ROOMS, SLIP_RANGE, SPAWN,
   cardLabel, collides, createDeck, dist, isHex, rolePlan, seatPosition, shuffle, solidRects, validatePlay,
-} from '../../shared/src/index';
+} from '../index';
 import type {
   Card, ChatMessage, ClientToServer, Cosmetics, FxEvent, GameRoomState, Item, JoinPayload, PlayerPublic,
   PrivateState, Role, RoomId, RoomSettings, SabotageType, ServerToClient, TableState,
-} from '../../shared/src/index';
-import { recordResult } from './db';
+} from '../index';
 import { BotDirector, BOT_NAMES } from './bots';
 
-export type IO = Server<ClientToServer, ServerToClient>;
-export type GameSocket = Socket<ClientToServer, ServerToClient>;
+/** Sortie réseau abstraite du moteur. */
+export interface EngineOutput {
+  /** Envoi à tous les joueurs de la salle. */
+  all<K extends keyof ServerToClient>(ev: K, ...args: Parameters<ServerToClient[K]>): void;
+  /** Envoi à un seul joueur (sans effet pour un bot). */
+  to<K extends keyof ServerToClient>(id: string, ev: K, ...args: Parameters<ServerToClient[K]>): void;
+}
+
+/** Résultat de fin de partie (pour les rapports de statistiques). */
+export interface GameEndInfo {
+  gameId: string;
+  durationMs: number;
+  winnerSide: NonNullable<GameRoomState['winner']>['side'];
+  players: { id: string; accountId: string | null; isBot: boolean; role: Role; won: boolean }[];
+}
 
 export interface Player {
   id: string;
@@ -47,7 +62,7 @@ const ROLE_FR: Record<Role, string> = { survivor: 'Survivant', possessed: 'Poss�
 
 export class GameRoom {
   readonly code: string;
-  private io: IO;
+  private out: EngineOutput;
   /** @internal lu par les bots */ players = new Map<string, Player>();
   private hostId = '';
   /** @internal lu par les bots */ phase: GameRoomState['phase'] = 'lobby';
@@ -63,16 +78,22 @@ export class GameRoom {
   private ghost = { x: GHOST_PATH[0].x, y: GHOST_PATH[0].y, active: false, wp: 1 };
   private winner: GameRoomState['winner'] = null;
   private lastPassivePanic = 0;
-  private timer: NodeJS.Timeout | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private gameId = '';
+  private startedAt = 0;
+  /** Rôles imposés (tutoriel). */
+  forcedRoles: Record<string, Role> = {};
+  /** Appelé à la fin de chaque partie. */
+  onGameEnd: (info: GameEndInfo) => void = () => {};
   private lastTick = Date.now();
   private chatLog: ChatMessage[] = [];
   private bots = new BotDirector(this);
   /** Appelé quand la salle est vide pour la retirer du registre. */
   onEmpty: () => void = () => {};
 
-  constructor(code: string, io: IO) {
+  constructor(code: string, out: EngineOutput) {
     this.code = code;
-    this.io = io;
+    this.out = out;
     this.resetTables();
     this.timer = setInterval(() => this.tick(), 1000 / 15);
   }
@@ -83,7 +104,8 @@ export class GameRoom {
   get humans() { return [...this.players.values()].filter((p) => p.connected && !p.isBot).length; }
   get isOpen() { return this.phase === 'lobby' && this.size < this.settings.maxPlayers; }
 
-  addPlayer(socket: GameSocket, p: JoinPayload, userId: string | null) {
+  /** Ajoute un joueur humain. `accountId` = id de compte annoncé (vérifié plus tard par les rapports croisés). */
+  addPlayer(id: string, p: JoinPayload, userId: string | null) {
     // Couleur déjà prise ? On attribue la première couleur libre de la palette.
     const taken = new Set([...this.players.values()].map((x) => x.cosmetics.color.toLowerCase()));
     if (taken.has(p.cosmetics.color.toLowerCase())) {
@@ -91,15 +113,14 @@ export class GameRoom {
       if (free) p = { ...p, cosmetics: { ...p.cosmetics, color: free } };
     }
     const player: Player = {
-      id: socket.id, isBot: false, userId, name: p.name.slice(0, 16) || 'Invité', cosmetics: p.cosmetics,
+      id, isBot: false, userId, name: p.name.slice(0, 16) || 'Invité', cosmetics: p.cosmetics,
       x: SPAWN.x, y: SPAWN.y, facing: 1, moving: false, alive: true, connected: true, seatedAt: null,
       role: 'survivor', hand: [], items: [], saltUntil: 0, uvUntil: 0, slipReadyAt: 0, searchReadyAt: 0,
       ghostTouchReadyAt: 0, mediumInspectUsed: false, bellUsed: false, revealed: false, lastMoveAt: Date.now(),
     };
-    this.players.set(socket.id, player);
-    if (!this.hostId) this.hostId = socket.id;
-    socket.join(this.code);
-    this.chatLog.forEach((m) => socket.emit('chat', m));
+    this.players.set(id, player);
+    if (!this.hostId) this.hostId = id;
+    this.chatLog.forEach((m) => this.out.to(id, 'chat', m));
     this.system(`${player.name} a rejoint le manoir.`);
     this.broadcast();
   }
@@ -116,7 +137,7 @@ export class GameRoom {
       this.hostId = next?.id ?? '';
     }
     if (this.humans === 0) { this.destroy(); return; }
-    this.io.to(this.code).emit('rtc:peers', this.connectedIds());
+    this.out.all('rtc:peers', this.connectedIds());
     this.checkWin();
     this.broadcast();
   }
@@ -196,6 +217,10 @@ export class GameRoom {
     this.ghost = { x: GHOST_PATH[0].x, y: GHOST_PATH[0].y, active: plan.skirmish, wp: 1 };
     this.resetTables();
 
+    this.gameId = uuid();
+    this.startedAt = Date.now();
+    // Rôles imposés (tutoriel) : on échange avec un joueur qui a reçu ce rôle.
+    const forced = Object.entries(this.forcedRoles);
     list.forEach((p, i) => {
       p.role = plan.skirmish ? 'skirmisher' : i < plan.possessed ? 'possessed' : i < plan.possessed + plan.medium ? 'medium' : 'survivor';
       Object.assign(p, {
@@ -206,6 +231,13 @@ export class GameRoom {
       p.x = BELL.x + Math.cos(a) * 110;
       p.y = BELL.y + Math.sin(a) * 110;
     });
+
+    for (const [fid, role] of forced) {
+      const fp = this.players.get(fid);
+      if (!fp || fp.role === role) continue;
+      const swap = list.find((x) => x !== fp && x.role === role);
+      if (swap) { swap.role = fp.role; fp.role = role; }
+    }
 
     // Distribution : les Possédés reçoivent d'abord des cartes Maudites à refiler.
     for (const p of list) {
@@ -223,7 +255,7 @@ export class GameRoom {
     this.phase = 'explore';
     this.lastPassivePanic = Date.now();
     this.system(plan.skirmish ? 'Mode Escarmouche : le Fantôme rôde. Videz votre main en premier !' : `La partie commence. ${plan.possessed} Possédé(s) se cache(nt) parmi vous…`);
-    this.io.to(this.code).emit('rtc:peers', this.connectedIds());
+    this.out.all('rtc:peers', this.connectedIds());
     this.players.forEach((p) => this.sendPrivate(p));
     this.broadcast();
   }
@@ -499,7 +531,7 @@ export class GameRoom {
     const v = this.players.get(targetId);
     if (!p || !v || p.role !== 'medium' || p.mediumInspectUsed || !p.alive) return;
     p.mediumInspectUsed = true;
-    this.io.to(id).emit('medium:result', { targetId, role: v.role });
+    this.out.to(id, 'medium:result', { targetId, role: v.role });
     this.sendPrivate(p);
   }
 
@@ -649,9 +681,12 @@ export class GameRoom {
     this.fx({ type: 'win', text: side === 'possessed' ? 'POSSÉDÉS!' : side === 'survivors' ? 'SURVIVANTS!' : side === 'ghost' ? 'GAME OVER' : 'VICTOIRE!' });
     this.system(`FIN : ${reason}`);
     // Statistiques persistantes (si Supabase configuré côté serveur).
-    this.players.forEach((p) => {
-      if (p.userId) void recordResult(p.userId, playerIds.includes(p.id), p.role);
-    });
+    try {
+      this.onGameEnd({
+        gameId: this.gameId, durationMs: Date.now() - this.startedAt, winnerSide: side,
+        players: [...this.players.values()].map((p) => ({ id: p.id, accountId: p.userId, isBot: p.isBot, role: p.role, won: playerIds.includes(p.id) })),
+      });
+    } catch (e) { console.warn('[engine] onGameEnd', e); }
     this.broadcast();
   }
 
@@ -675,11 +710,11 @@ export class GameRoom {
 
   private addPanic(n: number) { this.panic = Math.max(0, Math.min(100, this.panic + n)); }
   private connectedIds() { return [...this.players.values()].filter((p) => p.connected && !p.isBot).map((p) => p.id); }
-  private toast(id: string, text: string) { this.io.to(id).emit('toast', text); }
+  private toast(id: string, text: string) { this.out.to(id, 'toast', text); }
 
   private fx(f: FxEvent) {
-    if (f.only) this.io.to(f.only).emit('fx', f);
-    else this.io.to(this.code).emit('fx', f);
+    if (f.only) this.out.to(f.only, 'fx', f);
+    else this.out.all('fx', f);
   }
 
   private system(text: string) {
@@ -689,7 +724,7 @@ export class GameRoom {
   private pushChat(m: ChatMessage) {
     this.chatLog.push(m);
     if (this.chatLog.length > 60) this.chatLog.shift();
-    this.io.to(this.code).emit('chat', m);
+    this.out.all('chat', m);
   }
 
   private sendPrivate(p: Player) {
@@ -698,22 +733,23 @@ export class GameRoom {
       role: p.role, hand: p.hand, items: p.items, partners, saltUntil: p.saltUntil, uvUntil: p.uvUntil,
       slipReadyAt: p.slipReadyAt, mediumInspectUsed: p.mediumInspectUsed, bellUsed: p.bellUsed,
     };
-    this.io.to(p.id).emit('you', priv);
+    if (!p.isBot) this.out.to(p.id, 'you', priv);
   }
 
   broadcast() {
     const players: PlayerPublic[] = [...this.players.values()].map((p) => ({
       id: p.id, name: p.name, cosmetics: p.cosmetics, x: Math.round(p.x), y: Math.round(p.y), facing: p.facing,
       moving: p.moving, alive: p.alive, seatedAt: p.seatedAt, handCount: p.hand.length, isHost: p.id === this.hostId,
-      revealedRole: p.revealed ? p.role : null, connected: p.connected, isBot: p.isBot,
+      revealedRole: p.revealed ? p.role : null, connected: p.connected, isBot: p.isBot, accountId: p.userId,
     }));
     const state: GameRoomState = {
       code: this.code, phase: this.phase, hostId: this.hostId, settings: this.settings, players, panic: Math.round(this.panic),
       sabotage: { ...this.sabotage, locked: this.lockedRoom() ? this.sabotage.locked : null }, tables: this.tables,
       meeting: this.meeting, ghost: { x: this.ghost.x, y: this.ghost.y, active: this.ghost.active },
       deckCount: this.deck.length, skirmish: this.skirmish, winner: this.winner, now: Date.now(),
+      gameId: this.gameId, startedAt: this.startedAt,
     };
-    this.io.to(this.code).emit('state', state);
+    this.out.all('state', state);
   }
 
   destroy() {
@@ -724,3 +760,7 @@ export class GameRoom {
 }
 
 const rid = () => Math.random().toString(36).slice(2, 10);
+const uuid = (): string =>
+  typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = (Math.random() * 16) | 0; return (c === 'x' ? r : (r & 3) | 8).toString(16); });

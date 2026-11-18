@@ -39,7 +39,7 @@ export default function CardTableModal() {
   const play = () => { socket.emit('table:play', selected); setSelected([]); };
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-2">
+    <div className="compact-ui absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-2">
       <div className="panel w-full max-w-5xl h-full max-h-[720px] flex flex-col relative overflow-hidden"
         style={{ background: 'radial-gradient(ellipse at center, #2a5a2a 0%, #123012 55%, #0b1a0b 100%)' }}>
         {/* Bandeau */}

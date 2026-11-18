@@ -34,7 +34,7 @@ export default function Login({ onGuest, onGoRegister }: Props) {
   }
 
   return (
-    <div className="h-full overflow-y-auto flex flex-col items-center justify-center gap-6 p-6">
+    <div className="compact-page h-full overflow-y-auto flex flex-col items-center justify-center gap-6 p-6">
       <Logo className="w-full animate-float" />
       <div className="grid gap-6 w-full max-w-3xl md:grid-cols-2">
         {/* Invité rapide */}

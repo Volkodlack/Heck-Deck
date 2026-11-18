@@ -10,6 +10,7 @@ import { voice } from '../game/VoiceChat';
 import { SFX } from '../game/SoundEffects';
 import { ComicBurst, fxColor } from './ComicFx';
 import PlayingCard from './PlayingCard';
+import { isTouchDevice } from '../game/touch';
 
 const ROLE_INFO = {
   survivor: { label: 'SURVIVANT', color: 'bg-toxic text-black', goal: 'Vide ta main aux Tables de Rituel et démasque les Possédés.' },
@@ -40,7 +41,7 @@ export default function HUD({ prompt }: { prompt: Prompt | null }) {
   const panicColor = state.panic > 75 ? '#ff2e55' : state.panic > 45 ? '#ff9f1a' : '#7dff3a';
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-20 select-none">
+    <div className="absolute inset-0 pointer-events-none z-20 select-none compact-ui">
       {/* ---------- Haut : Panique ---------- */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[min(560px,70vw)]">
         <div className="flex justify-between font-comic text-lg comic-stroke"><span>PANIQUE DU MANOIR</span><span>{state.panic}%</span></div>
@@ -66,9 +67,11 @@ export default function HUD({ prompt }: { prompt: Prompt | null }) {
       <div className="absolute top-3 right-3 flex flex-col items-end gap-2 pointer-events-auto">
         <span className="panel px-3 py-1 font-pixel text-xs text-toxic">{state.code} · Pioche {state.deckCount}</span>
         <div className="flex gap-2">
-          <button className="btn-ghost !text-sm !px-2 !py-1" onClick={() => { const m = !micMuted; setMicMuted(m); voice.setMicMuted(m); }} title="Micro">
-            {voice.micAvailable ? (micMuted ? '🎙️✖' : '🎙️') : '🎙️ off'}
-          </button>
+          {socket.kind !== 'local' && (
+            <button className="btn-ghost !text-sm !px-2 !py-1" onClick={() => { const m = !micMuted; setMicMuted(m); voice.setMicMuted(m); }} title="Micro">
+              {voice.micAvailable ? (micMuted ? '🎙️✖' : '🎙️') : '🎙️ off'}
+            </button>
+          )}
           <button className="btn-ghost !text-sm !px-2 !py-1" onClick={() => { const m = !muted; setMuted(m); SFX.setMuted(m); }} title="Son">{muted ? '🔇' : '🔊'}</button>
         </div>
       </div>
@@ -120,16 +123,16 @@ export default function HUD({ prompt }: { prompt: Prompt | null }) {
       </div>
 
       {/* ---------- Invite d'interaction ---------- */}
-      {prompt && (
+      {prompt && !isTouchDevice() && (
         <button className="absolute bottom-36 left-1/2 -translate-x-1/2 btn-toxic pointer-events-auto animate-pop" onClick={interactNow}>
           [E] {prompt.label}
         </button>
       )}
 
       {/* ---------- Aide contrôles ---------- */}
-      <p className="absolute bottom-3 left-3 text-[10px] font-pixel opacity-50 leading-4 hidden md:block">
+      {!isTouchDevice() && <p className="absolute bottom-3 left-3 text-[10px] font-pixel opacity-50 leading-4 hidden md:block">
         ZQSD/WASD/↑↓←→ bouger<br />E interagir · 1/2 objets{me.role === 'possessed' ? ' · R refiler' : ''}
-      </p>
+      </p>}
 
       {/* ---------- Toasts & onomatopées ---------- */}
       <div className="absolute top-40 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">

@@ -13,7 +13,7 @@ export default function EndScreen() {
   const iWon = w.playerIds.includes(socket.id ?? '');
   const isHost = state.hostId === socket.id;
   return (
-    <div className="absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-4 p-4">
+    <div className="compact-ui absolute inset-0 z-50 bg-black/80 flex flex-col items-center justify-center gap-4 p-4">
       <ComicBurst text={iWon ? 'VICTOIRE!' : 'DÉFAITE…'} color={iWon ? '#7dff3a' : '#ff2e55'} size={1.4} />
       <h2 className="font-comic text-4xl comic-stroke text-center">{SIDE[w.side]}</h2>
       <p className="opacity-80 text-center">{w.reason}</p>
