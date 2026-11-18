@@ -55,7 +55,14 @@ jobs:
           HEXDECK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          if [ -n "$HEXDECK_KEYSTORE" ]; then ./gradlew --no-daemon assembleRelease; else ./gradlew --no-daemon assembleDebug; fi
+          TASK=assembleDebug; [ -n "$HEXDECK_KEYSTORE" ] && TASK=assembleRelease
+          if ! ./gradlew --no-daemon --console=plain $TASK > gradle.log 2>&1; then
+            # Remonte l'erreur dans les annotations du workflow (lisibles sans ouvrir les logs)
+            grep -E "error:|What went wrong|e: |FAILED|Could not|> " gradle.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            tail -60 gradle.log
+            exit 1
+          fi
+          tail -5 gradle.log
           mkdir -p ../../apk
           find app/build/outputs/apk -name '*.apk' -exec cp {} ../../apk/ \;
           cd ../../apk && for f in *.apk; do mv "$f" "hexdeck-${HEXDECK_VERSION_NAME}-${f#app-}"; done && ls -la
